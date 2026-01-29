@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ansibin Darmstadt Reservierung</title>
+    <style>
+        :root {
+            --primary: #ff9f1c; /* Ansibin Warm Tone */
+            --bg: #121212;
+            --surface: #1e1e1e;
+            --text: #ffffff;
+            --success: #2ec4b6;
+            --disabled: #555555;
+        }
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--bg); color: var(--text); margin: 0; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+        
+        /* Container Setup */
+        .screen { display: none; width: 100%; max-width: 500px; padding: 20px; box-sizing: border-box; animation: fadeIn 0.4s; }
+        .screen.active { display: flex; flex-direction: column; gap: 15px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Typography & Buttons */
+        h1, h2 { text-align: center; color: var(--primary); }
+        button { background: var(--primary); color: #000; border: none; padding: 15px; font-size: 1.1rem; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        button:hover { filter: brightness(1.1); }
+        button:disabled { background: var(--disabled); cursor: not-allowed; }
+        .btn-secondary { background: transparent; border: 1px solid var(--primary); color: var(--primary); margin-top: 10px; }
+
+        /* Date Cards */
+        .date-card { background: var(--surface); padding: 15px; border-radius: 8px; cursor: pointer; border: 1px solid #333; display: flex; justify-content: space-between; align-items: center; }
+        .date-card:hover { border-color: var(--primary); }
+        .event-tag { background: #333; font-size: 0.8rem; padding: 2px 8px; border-radius: 4px; margin-top: 5px; display: inline-block; color: #aaa; }
+
+        /* Room Plan */
+        .room-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; background: #000; padding: 20px; border-radius: 10px; }
+        .bar-area { grid-column: span 2; background: #333; height: 50px; display: flex; align-items: center; justify-content: center; border-radius: 5px; font-weight: bold; letter-spacing: 2px; margin-bottom: 20px; border-bottom: 3px solid var(--primary); }
+        .table { height: 80px; background: var(--success); color: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 8px; cursor: pointer; font-weight: bold; position: relative; }
+        .table.taken { background: var(--disabled); color: #888; cursor: not-allowed; }
+        .table.selected { border: 3px solid #fff; box-shadow: 0 0 15px var(--primary); }
+        
+        /* Form */
+        input, select { background: var(--surface); border: 1px solid #444; color: white; padding: 12px; border-radius: 5px; font-size: 1rem; }
+        
+        /* Admin */
+        .booking-item { background: var(--surface); padding: 10px; border-left: 4px solid var(--primary); margin-bottom: 10px; font-size: 0.9rem; }
+    </style>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+    <div id="landing" class="screen active">
+        <h1 style="font-size: 3rem; margin-top: 30vh;">ANSIBIN</h1>
+        <p style="text-align: center; color: #888;">Darmstadt</p>
+        <button onclick="showDateSelection()">Tisch Reservieren</button>
+        <div style="margin-top: 50px; text-align: center;">
+            <a href="#" onclick="showAdmin()" style="color: #333; text-decoration: none; font-size: 0.8rem;">Mitarbeiter Login</a>
+        </div>
+    </div>
+
+    <div id="dates" class="screen">
+        <h2>Wann möchtest du kommen?</h2>
+        <div id="dates-list"></div>
+        <button class="btn-secondary" onclick="navigate('landing')">Zurück</button>
+    </div>
+
+    <div id="room" class="screen">
+        <h2 id="room-title">Tisch wählen</h2>
+        <p id="room-event" style="text-align: center; color: var(--primary);"></p>
+        
+        <div class="room-layout">
+            <div class="bar-area">THEKE / BAR</div>
+            <div id="tables-container" style="display: contents;"></div>
+        </div>
+
+        <div id="selection-details" style="display:none; text-align: center; margin-top: 20px; background: var(--surface); padding: 15px; border-radius: 8px;">
+            <h3>Tisch <span id="sel-table-num"></span></h3>
+            <p>Platz für 5 Personen</p>
+            <button onclick="navigate('form')">Jetzt reservieren</button>
+        </div>
+        <button class="btn-secondary" onclick="navigate('dates')">Zurück</button>
+    </div>
+
+    <div id="form" class="screen">
+        <h2>Deine Daten</h2>
+        <input type="text" id="inp-name" placeholder="Dein Name" required>
+        <input type="email" id="inp-email" placeholder="Deine E-Mail" required>
+        <input type="number" id="inp-pax" placeholder="Anzahl Personen (Max 5)" min="1" max="5" required>
+        <label>Uhrzeit (19:00 - 21:00)</label>
+        <select id="inp-time">
+            <option value="19:00">19:00</option>
+            <option value="19:30">19:30</option>
+            <option value="20:00">20:00</option>
+            <option value="20:30">20:30</option>
+            <option value="21:00">21:00</option>
+        </select>
+        <button onclick="submitBooking()">Jetzt Buchen</button>
+        <button class="btn-secondary" onclick="navigate('room')">Zurück</button>
+    </div>
+
+    <div id="pending" class="screen" style="text-align: center;">
+        <h2>Fast fertig!</h2>
+        <p>Bitte bestätigen Sie Ihre E-Mail Adresse.</p>
+        <div style="background: #333; padding: 20px; border-radius: 8px; margin-top: 20px;">
+            <small><i>(Simulation: Klicke hier, als hättest du die E-Mail bestätigt)</i></small><br><br>
+            <button onclick="simulateEmailVerification()" style="background: white; color: black; font-size: 0.9rem;">[Link in E-Mail]</button>
+        </div>
+    </div>
+
+    <div id="success" class="screen" style="text-align: center;">
+        <h2 style="color: var(--success);">Vielen Dank!</h2>
+        <p>Wir freuen uns auf Sie im Ansibin.</p>
+        <button onclick="location.reload()">Zurück zum Start</button>
+    </div>
+
+    <div id="admin" class="screen">
+        <h2>Mitarbeiter Bereich</h2>
+        <div id="admin-days-list"></div>
+        <button class="btn-secondary" onclick="location.reload()">Logout</button>
+    </div>
+
+    <script>
+        // --- 1. HIER DEINE FIREBASE CONFIG EINFÜGEN ---
+const firebaseConfig = {
+    apiKey: "AIzaSyCoUPDEqYRjwtvMASpy4ERAP-sHZC3zlj4",
+    authDomain: "ansibin-reservierung.firebaseapp.com",
+    databaseURL: "https://ansibin-reservierung-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "ansibin-reservierung",
+    storageBucket: "ansibin-reservierung.firebasestorage.app",
+    messagingSenderId: "1007901665568",
+    appId: "1:1007901665568:web:88b2d3c2e65136f279cf45",
+    measurementId: "G-NB5RPJ8G1P"
+  };
+        
+        // Initialisierung (Fehler abfangen falls Config fehlt)
+        let db;
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+        } catch (e) {
+            console.error("Firebase Config fehlt oder ist falsch.");
+            alert("Bitte Firebase Config im Code einfügen!");
+        }
+
+        // --- KONSTANTEN & STATE ---
+        const events = { 2: "Bar Betrieb", 3: "Pubquizz", 4: "Karaoke", 5: "Karaoke", 6: "Karaoke" };
+        const tables = [1, 2, 3, 4]; // 4 Tische
+        let state = { selectedDate: null, selectedTable: null, bookingId: null };
+
+        // --- NAVIGATION ---
+        function navigate(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+        }
+
+        // --- LOGIK: DATUM ---
+        function getNext7OpenDays() {
+            let list = [];
+            let date = new Date();
+            let added = 0;
+            
+            // Wenn heute nach 18 Uhr -> Start ab morgen
+            if (date.getHours() >= 18) {
+                date.setDate(date.getDate() + 1);
+            }
+
+            // Suche die nächsten 7 Tage
+            while (added < 7) {
+                let day = date.getDay(); // 0=So, 1=Mo, 2=Di...
+                // Di(2) bis Sa(6) geöffnet
+                if (day >= 2 && day <= 6) {
+                    list.push(new Date(date));
+                    added++;
+                }
+                date.setDate(date.getDate() + 1);
+            }
+            return list;
+        }
+
+        function formatDate(dateObj) {
+            return dateObj.toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
+
+        function getDateId(dateObj) {
+            return dateObj.toISOString().split('T')[0]; // YYYY-MM-DD
+        }
+
+        // --- SCREEN: DATUM AUSWAHL ---
+        function showDateSelection() {
+            const list = document.getElementById('dates-list');
+            list.innerHTML = '';
+            const days = getNext7OpenDays();
+
+            days.forEach(d => {
+                const dayId = d.getDay();
+                const div = document.createElement('div');
+                div.className = 'date-card';
+                div.innerHTML = `
+                    <div>
+                        <strong>${formatDate(d)}</strong><br>
+                        <span class="event-tag">${events[dayId]}</span>
+                    </div>
+                    <div>➜</div>
+                `;
+                div.onclick = () => {
+                    state.selectedDate = d;
+                    loadRoomPlan();
+                };
+                list.appendChild(div);
+            });
+            navigate('dates');
+        }
+
+        // --- SCREEN: RAUMPLAN ---
+        async function loadRoomPlan() {
+            navigate('room');
+            const title = document.getElementById('room-title');
+            const eventInfo = document.getElementById('room-event');
+            const container = document.getElementById('tables-container');
+            
+            title.innerText = formatDate(state.selectedDate);
+            eventInfo.innerText = "Event: " + events[state.selectedDate.getDay()];
+            container.innerHTML = 'Lade Verfügbarkeit...';
+            document.getElementById('selection-details').style.display = 'none';
+
+            // Firestore abfragen für diesen Tag
+            const dateStr = getDateId(state.selectedDate);
+            const snapshot = await db.collection('bookings').where('date', '==', dateStr).get();
+            
+            const takenTables = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                // Nur bestätigte oder wartende Reservierungen blockieren
+                if (data.status !== 'cancelled') {
+                    takenTables.push(data.tableId);
+                }
+            });
+
+            container.innerHTML = '';
+            tables.forEach(tId => {
+                const isTaken = takenTables.includes(tId);
+                const el = document.createElement('div');
+                el.className = `table ${isTaken ? 'taken' : ''}`;
+                el.innerText = `Tisch ${tId}`;
+                
+                if (!isTaken) {
+                    el.onclick = () => {
+                        document.querySelectorAll('.table').forEach(t => t.classList.remove('selected'));
+                        el.classList.add('selected');
+                        state.selectedTable = tId;
+                        document.getElementById('sel-table-num').innerText = tId;
+                        document.getElementById('selection-details').style.display = 'block';
+                    };
+                }
+                container.appendChild(el);
+            });
+        }
+
+        // --- SCREEN: BUCHEN & ABSCHICKEN ---
+        async function submitBooking() {
+            const name = document.getElementById('inp-name').value;
+            const email = document.getElementById('inp-email').value;
+            const pax = document.getElementById('inp-pax').value;
+            const time = document.getElementById('inp-time').value;
+
+            if(!name || !email || !pax) return alert("Bitte alle Felder ausfüllen");
+
+            const dateStr = getDateId(state.selectedDate);
+            
+            // Speichern in Firestore
+            try {
+                // Wir nutzen add(), Firestore generiert eine ID
+                const docRef = await db.collection('bookings').add({
+                    date: dateStr,
+                    tableId: state.selectedTable,
+                    name: name,
+                    email: email,
+                    pax: pax,
+                    time: time,
+                    status: 'pending_email_verification', // Status zuerst Pending
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                
+                state.bookingId = docRef.id;
+                navigate('pending');
+
+                // HINWEIS: Hier würde in einer echten App eine Cloud Function 
+                // eine E-Mail senden. Da wir keinen Server-Code haben, 
+                // simulieren wir den Erhalt der E-Mail im nächsten Schritt.
+
+            } catch (e) {
+                console.error(e);
+                alert("Fehler bei der Buchung. Bitte versuchen Sie es erneut.");
+            }
+        }
+
+        // --- SCREEN: VERIFIZIERUNG (SIMULATION) ---
+        async function simulateEmailVerification() {
+            if (!state.bookingId) return;
+
+            // Update Status in Firestore auf 'confirmed'
+            await db.collection('bookings').doc(state.bookingId).update({
+                status: 'confirmed'
+            });
+
+            navigate('success');
+        }
+
+        // --- SCREEN: ADMIN ---
+        function showAdmin() {
+            const days = getNext7OpenDays();
+            const list = document.getElementById('admin-days-list');
+            list.innerHTML = '';
+
+            days.forEach(d => {
+                const btn = document.createElement('div');
+                btn.className = 'date-card';
+                btn.innerHTML = `<strong>${formatDate(d)}</strong>`;
+                btn.onclick = () => loadAdminBookings(d);
+                list.appendChild(btn);
+            });
+            navigate('admin');
+        }
+
+        async function loadAdminBookings(date) {
+            const dateStr = getDateId(date);
+            const snapshot = await db.collection('bookings')
+                .where('date', '==', dateStr)
+                .where('status', '==', 'confirmed') // Nur bestätigte anzeigen
+                .get();
+
+            let html = `<h3>Buchungen für ${formatDate(date)}</h3>`;
+            
+            if (snapshot.empty) {
+                html += "<p>Keine Reservierungen.</p>";
+            } else {
+                snapshot.forEach(doc => {
+                    const b = doc.data();
+                    html += `
+                        <div class="booking-item">
+                            <strong>${b.time} Uhr - Tisch ${b.tableId}</strong><br>
+                            ${b.name} (${b.pax} Pers.)<br>
+                            <small>${b.email}</small>
+                        </div>
+                    `;
+                });
+            }
+            html += `<button class="btn-secondary" onclick="showAdmin()">Zurück zur Übersicht</button>`;
+            document.getElementById('admin-days-list').innerHTML = html;
+        }
+
+    </script>
+</body>
+</html>
